@@ -39,6 +39,19 @@ class Lywsd02Client:
         self._data = SensorData(None, None)
         self._history_data = collections.OrderedDict()
         self._connected = False
+        self._characteristics_cache = {}
+
+    def _get_characteristics(self, uuid):
+        """Get characteristics object.
+
+        This method caches received characteristics and allow to reduce
+        number of requests to device.
+        """
+        ch = self._characteristics_cache.get(uuid)
+        if not ch:
+            ch = self._peripheral.getCharacteristics(uuid=uuid)
+            self._characteristics_cache[uuid] = ch
+        return ch
 
     @contextlib.contextmanager
     def connect(self):
@@ -72,7 +85,7 @@ class Lywsd02Client:
     @property
     def units(self):
         with self.connect():
-            ch = self._peripheral.getCharacteristics(uuid=UUID_UNITS)[0]
+            ch = self._get_characteristics(uuid=UUID_UNITS)
             value = ch.read()
         return self.UNITS[value]
 
@@ -83,13 +96,13 @@ class Lywsd02Client:
                 'Units value must be one of %s' % self.UNITS_CODES.keys())
 
         with self.connect():
-            ch = self._peripheral.getCharacteristics(uuid=UUID_UNITS)[0]
+            ch = self._get_characteristics(uuid=UUID_UNITS)[0]
             ch.write(self.UNITS_CODES[value.upper()], withResponse=True)
 
     @property
     def battery(self):
         with self.connect():
-            ch = self._peripheral.getCharacteristics(
+            ch = self._get_characteristics(
                 uuid=btle.AssignedNumbers.battery_level)[0]
             value = ch.read()
         return ord(value)
@@ -97,7 +110,7 @@ class Lywsd02Client:
     @property
     def time(self):
         with self.connect():
-            ch = self._peripheral.getCharacteristics(uuid=UUID_TIME)[0]
+            ch = self._get_characteristics(uuid=UUID_TIME)[0]
             value = ch.read()
         if len(value) == 5:
             ts, tz_offset = struct.unpack('Ib', value)
@@ -115,7 +128,7 @@ class Lywsd02Client:
 
         data = struct.pack('Ib', int(dt.timestamp()), tz_offset)
         with self.connect():
-            ch = self._peripheral.getCharacteristics(uuid=UUID_TIME)[0]
+            ch = self._get_characteristics(uuid=UUID_TIME)[0]
             ch.write(data, withResponse=True)
 
     @property
@@ -156,7 +169,7 @@ class Lywsd02Client:
 
     def _subscribe(self, uuid, callback):
         self._peripheral.setDelegate(self)
-        ch = self._peripheral.getCharacteristics(uuid=uuid)[0]
+        ch = self._get_characteristics(uuid=uuid)[0]
         self._handles[ch.getHandle()] = callback
         desc = ch.getDescriptors(forUUID=0x2902)[0]
 
